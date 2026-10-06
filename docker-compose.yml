@@ -1,0 +1,17 @@
+services:
+  web:
+    image: callsign-quiz-hero:local
+    build:
+      context: .
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATA_DIR: /data
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - quiz-data:/data
+    restart: unless-stopped
+
+volumes:
+  quiz-data:

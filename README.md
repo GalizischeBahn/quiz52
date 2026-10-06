@@ -98,3 +98,19 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Run with Docker
+
+Docker Compose builds the production web image locally and starts the app on port 3000. The standalone Docker configuration stores quizzes, participants, attempts, branding, and admin accounts in a local JSON database volume; Supabase credentials are not required.
+
+1. (Optional) Copy `.env.example` to `.env` if you want to change the host port.
+2. Build and start the image:
+
+   ```sh
+   docker compose up --build -d
+   ```
+
+3. Open [http://localhost:3000](http://localhost:3000). On first use, open **Вхід для адміністратора → Немає акаунта? Зареєструватись** to create the first administrator. After this account is created, public admin registration is closed; the main administrator can add other admins in the panel. The participant page is seeded with two sample units and quizzes.
+4. To stop the app, run `docker compose down`. The named `quiz-data` volume preserves data; `docker compose down -v` deletes that database.
+
+This standalone mode stores uploaded media as data URLs in its JSON database, so keep uploads modest in size. It is intended for a single local instance and is not a replacement for a managed multi-user production database.

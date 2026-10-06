@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { AdminShell } from "@/components/AdminShell";
-import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
@@ -30,6 +29,7 @@ function AdminStats() {
 
   const statsQuery = useQuery({
     queryKey: ["admin-stats"],
+    refetchInterval: 5_000,
     queryFn: async (): Promise<Row[]> => {
       const { data, error } = await supabase
         .from("attempts")
@@ -52,18 +52,10 @@ function AdminStats() {
   });
 
   useEffect(() => {
-    const channel = supabase
-      .channel("admin-stats")
-      .on("postgres_changes", { event: "*", schema: "public", table: "attempts" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "responses" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    const timer = window.setInterval(() => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    }, 5_000);
+    return () => window.clearInterval(timer);
   }, [queryClient]);
 
   const rows = statsQuery.data ?? [];
