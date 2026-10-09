@@ -20,8 +20,8 @@ type ReviewItem = {
   correct: string | null;
 };
 type Leaderboard = {
-  entries: { rank: number; callsign: string; unit_name: string; score: number; participant_id: string }[];
-  participant: { rank: number; callsign: string; unit_name: string; score: number; participant_id: string } | null;
+  entries: { callsign: string; unit_name: string; score: number; participant_id: string }[];
+  participant: { callsign: string; unit_name: string; score: number; participant_id: string } | null;
   total: number;
 };
 
@@ -168,9 +168,9 @@ function QuizPage() {
           </p>
           {leaderboard?.participant ? (
             <section className="mt-6 rounded-md border border-accent/40 bg-accent-soft p-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-accent">Ваш результат у рейтингу</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-accent">Ваш результат</p>
               <p className="mt-2 font-display text-xl font-bold">
-                {leaderboard.participant.rank} місце · {leaderboard.participant.score} балів
+                {leaderboard.participant.score} балів
               </p>
               <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                 Завершили квіз: {leaderboard.total}
@@ -182,8 +182,8 @@ function QuizPage() {
               <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">Лідерборд</h2>
               <ol className="mt-3 divide-y divide-border rounded-md border border-border">
                 {leaderboard.entries.map((entry) => (
-                  <li key={entry.participant_id} className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm ${entry.participant_id === leaderboard.participant?.participant_id ? "bg-accent-soft" : "bg-surface-2"}`}>
-                    <span><span className="mr-3 font-mono text-muted-foreground">#{entry.rank}</span><span className="font-semibold">{entry.callsign}</span><span className="ml-2 text-muted-foreground">· {entry.unit_name}</span></span>
+                  <li key={entry.participant_id} className="flex items-center justify-between gap-3 bg-surface-2 px-3 py-2.5 text-sm">
+                    <span><span className="font-semibold">{entry.callsign}</span><span className="ml-2 text-muted-foreground">· {entry.unit_name}</span></span>
                     <span className="whitespace-nowrap font-mono">{entry.score} балів</span>
                   </li>
                 ))}
@@ -272,16 +272,6 @@ function QuizPage() {
             {info?.prize_image_url ? (
               <img src={info.prize_image_url} alt={info.prize ?? "Зображення призу"} className="mt-4 max-h-80 w-full rounded-md border border-border object-contain" />
             ) : null}
-
-            <div className="mt-4 rounded-md border border-border bg-surface-2 p-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-                Правила перемоги
-              </p>
-              <p className="mt-2 whitespace-pre-line text-sm">
-                {info?.rules ??
-                  "Дайте якнайбільше правильних відповідей. Пройти квіз можна лише один раз з цього пристрою."}
-              </p>
-            </div>
 
             <div className="mt-8 flex items-center gap-3">
               <button

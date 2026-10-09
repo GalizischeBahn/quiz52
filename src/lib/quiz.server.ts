@@ -45,7 +45,7 @@ export async function getQuizForParticipant(deviceToken: string, quizId: string)
   return { participant, quiz, questions, attempt, responses, review, leaderboard };
 }
 
-type LeaderboardEntry = { rank: number; callsign: string; unit_name: string; score: number; participant_id: string };
+type LeaderboardEntry = { callsign: string; unit_name: string; score: number; participant_id: string };
 
 function makeLeaderboard(db: Awaited<ReturnType<typeof getDb>>, quizId: string, participantId: string) {
   const completed = db.attempts
@@ -58,7 +58,6 @@ function makeLeaderboard(db: Awaited<ReturnType<typeof getDb>>, quizId: string, 
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
     .sort((a, b) => b.attempt.score - a.attempt.score || String(a.attempt.end_time).localeCompare(String(b.attempt.end_time)));
   const entries: LeaderboardEntry[] = completed.map(({ attempt, participant, unit }) => ({
-    rank: 1 + completed.filter((entry) => entry.attempt.score > attempt.score).length,
     callsign: participant.callsign,
     unit_name: unit.name,
     score: attempt.score,
