@@ -30,18 +30,41 @@ export async function requireParticipant(token: string): Promise<ParticipantSess
 
 export async function listPublishedQuizzes(deviceToken: string) {
   const participant = await requireParticipant(deviceToken); const db = await getDb();
-  return { participant, quizzes: db.quizzes.filter((q) => q.is_published).map((q) => ({ id: q.id, title: q.title, description: q.description, attempt: db.attempts.find((a) => a.quiz_id === q.id && a.participant_id === participant.id) ?? null })) };
+  return { participant, quizzes: db.quizzes.filter((q) => q.is_published && q.is_current).map((q) => ({ id: q.id, title: q.title, description: q.description, attempt: db.attempts.find((a) => a.quiz_id === q.id && a.participant_id === participant.id) ?? null })) };
 }
 
 export async function getQuizForParticipant(deviceToken: string, quizId: string) {
   const participant = await requireParticipant(deviceToken); const db = await getDb();
-  const quiz = db.quizzes.find((q) => q.id === quizId && q.is_published);
+  const quiz = db.quizzes.find((q) => q.id === quizId && q.is_published && q.is_current);
   if (!quiz) throw new Error("Квіз недоступний");
   const questions = db.questions.filter((q) => q.quiz_id === quizId).sort((a, b) => a.position - b.position).map((q) => ({ ...q, answers: db.answers.filter((a) => a.question_id === q.id).sort((a, b) => a.position - b.position).map(({ id, text, position }) => ({ id, text, position })) }));
   const attempt = db.attempts.find((a) => a.participant_id === participant.id && a.quiz_id === quizId) ?? null;
   const responses = attempt ? db.responses.filter((r) => r.attempt_id === attempt.id).map(({ question_id, answer_id }) => ({ question_id, answer_id })) : [];
   const review = attempt?.end_time ? makeReview(db, quizId, attempt.id) : [];
-  return { participant, quiz, questions, attempt, responses, review };
+  const leaderboard = attempt?.end_time ? makeLeaderboard(db, quizId, participant.id) : null;
+  return { participant, quiz, questions, attempt, responses, review, leaderboard };
+}
+
+type LeaderboardEntry = { rank: number; callsign: string; unit_name: string; score: number; participant_id: string };
+
+function makeLeaderboard(db: Awaited<ReturnType<typeof getDb>>, quizId: string, participantId: string) {
+  const completed = db.attempts
+    .filter((attempt) => attempt.quiz_id === quizId && attempt.end_time)
+    .map((attempt) => {
+      const participant = db.participants.find((p) => p.id === attempt.participant_id);
+      const unit = participant && db.units.find((u) => u.id === participant.unit_id);
+      return participant && unit ? { attempt, participant, unit } : null;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .sort((a, b) => b.attempt.score - a.attempt.score || String(a.attempt.end_time).localeCompare(String(b.attempt.end_time)));
+  const entries: LeaderboardEntry[] = completed.map(({ attempt, participant, unit }) => ({
+    rank: 1 + completed.filter((entry) => entry.attempt.score > attempt.score).length,
+    callsign: participant.callsign,
+    unit_name: unit.name,
+    score: attempt.score,
+    participant_id: participant.id,
+  }));
+  return { entries: entries.slice(0, 10), participant: entries.find((entry) => entry.participant_id === participantId) ?? null, total: entries.length };
 }
 
 function makeReview(db: Awaited<ReturnType<typeof getDb>>, quizId: string, attemptId: string): AttemptReviewItem[] {
@@ -54,6 +77,9 @@ function makeReview(db: Awaited<ReturnType<typeof getDb>>, quizId: string, attem
 export async function startAttempt(deviceToken: string, quizId: string) {
   const participant = await requireParticipant(deviceToken);
   return changeDb((db) => {
+    if (!db.quizzes.some((quiz) => quiz.id === quizId && quiz.is_published && quiz.is_current)) {
+      throw new Error("Цей квіз більше не є поточним");
+    }
     const old = db.attempts.find((a) => a.participant_id === participant.id && a.quiz_id === quizId);
     if (old) { if (old.end_time) throw new Error("Ви вже проходили цей квіз"); return old; }
     const attempt = { id: newId(), participant_id: participant.id, quiz_id: quizId, start_time: new Date().toISOString(), end_time: null, score: 0 }; db.attempts.push(attempt); return attempt;
@@ -81,6 +107,6 @@ export async function finishAttempt(deviceToken: string, attemptId: string) {
     if (!attempt) throw new Error("Спробу не знайдено");
     attempt.end_time ??= new Date().toISOString();
     attempt.score = db.responses.filter((r) => r.attempt_id === attemptId && r.is_correct).length;
-    return { attempt: { id: attempt.id, score: attempt.score, end_time: attempt.end_time }, total: db.questions.filter((q) => q.quiz_id === attempt.quiz_id).length, review: makeReview(db, attempt.quiz_id, attemptId) };
+    return { attempt: { id: attempt.id, score: attempt.score, end_time: attempt.end_time }, total: db.questions.filter((q) => q.quiz_id === attempt.quiz_id).length, review: makeReview(db, attempt.quiz_id, attemptId), leaderboard: makeLeaderboard(db, attempt.quiz_id, participant.id) };
   });
 }

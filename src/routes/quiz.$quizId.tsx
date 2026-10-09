@@ -19,6 +19,11 @@ type ReviewItem = {
   given: string | null;
   correct: string | null;
 };
+type Leaderboard = {
+  entries: { rank: number; callsign: string; unit_name: string; score: number; participant_id: string }[];
+  participant: { rank: number; callsign: string; unit_name: string; score: number; participant_id: string } | null;
+  total: number;
+};
 
 export const Route = createFileRoute("/quiz/$quizId")({
   head: () => ({
@@ -46,6 +51,7 @@ function QuizPage() {
     score: number;
     total: number;
     review: ReviewItem[];
+    leaderboard: Leaderboard;
   } | null>(null);
 
   const getQuiz = useServerFn(apiGetQuiz);
@@ -110,6 +116,7 @@ function QuizPage() {
         score: result.attempt.score,
         total: result.total,
         review: result.review as ReviewItem[],
+        leaderboard: result.leaderboard as Leaderboard,
       }),
     onError: (error: Error) => toast.error(error.message),
   });
@@ -146,6 +153,7 @@ function QuizPage() {
     const total = finished?.total ?? questions.length;
     const review: ReviewItem[] =
       finished?.review ?? ((quizQuery.data?.review ?? []) as ReviewItem[]);
+    const leaderboard = finished?.leaderboard ?? (quizQuery.data?.leaderboard as Leaderboard | null);
     const mistakes = review.filter((item) => !item.is_correct);
     return (
       <div className="min-h-screen bg-background px-6 py-10">
@@ -158,6 +166,33 @@ function QuizPage() {
           <p className="mt-3 font-mono text-[11px] text-muted-foreground">
             Квіз завершено. Дякуємо за проходження.
           </p>
+          {leaderboard?.participant ? (
+            <section className="mt-6 rounded-md border border-accent/40 bg-accent-soft p-4">
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-accent">Ваш результат у рейтингу</p>
+              <p className="mt-2 font-display text-xl font-bold">
+                {leaderboard.participant.rank} місце · {leaderboard.participant.score} балів
+              </p>
+              <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                Завершили квіз: {leaderboard.total}
+              </p>
+            </section>
+          ) : null}
+          {leaderboard && leaderboard.entries.length > 0 ? (
+            <section className="mt-6 text-left">
+              <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">Лідерборд</h2>
+              <ol className="mt-3 divide-y divide-border rounded-md border border-border">
+                {leaderboard.entries.map((entry) => (
+                  <li key={entry.participant_id} className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm ${entry.participant_id === leaderboard.participant?.participant_id ? "bg-accent-soft" : "bg-surface-2"}`}>
+                    <span><span className="mr-3 font-mono text-muted-foreground">#{entry.rank}</span><span className="font-semibold">{entry.callsign}</span><span className="ml-2 text-muted-foreground">· {entry.unit_name}</span></span>
+                    <span className="whitespace-nowrap font-mono">{entry.score} балів</span>
+                  </li>
+                ))}
+              </ol>
+              {leaderboard.total > leaderboard.entries.length ? (
+                <p className="mt-2 font-mono text-[10px] text-muted-foreground">Показано перших {leaderboard.entries.length} учасників.</p>
+              ) : null}
+            </section>
+          ) : null}
           {mistakes.length > 0 ? (
             <div className="mt-8 text-left">
               <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-destructive">
@@ -189,7 +224,7 @@ function QuizPage() {
             to="/"
             className="mt-8 inline-block rounded-md bg-accent px-4 py-2 font-mono text-xs font-medium text-accent-foreground"
           >
-            До списку квізів
+            На головну
           </Link>
         </div>
       </div>
@@ -234,6 +269,9 @@ function QuizPage() {
                 </dd>
               </div>
             </dl>
+            {info?.prize_image_url ? (
+              <img src={info.prize_image_url} alt={info.prize ?? "Зображення призу"} className="mt-4 max-h-80 w-full rounded-md border border-border object-contain" />
+            ) : null}
 
             <div className="mt-4 rounded-md border border-border bg-surface-2 p-4">
               <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
@@ -253,7 +291,7 @@ function QuizPage() {
                 Розпочати
               </button>
               <Link to="/" className="font-mono text-[11px] text-muted-foreground hover:text-foreground">
-                Назад до списку
+                На головну
               </Link>
             </div>
           </div>
@@ -326,6 +364,7 @@ function QuizPage() {
               return (
                 <button
                   key={answer.id}
+                  disabled={!attemptId || saveMutation.isPending}
                   onClick={() => {
                     setSelected((prev) => ({ ...prev, [current.id]: answer.id }));
                     if (attemptId) {
@@ -363,15 +402,15 @@ function QuizPage() {
             </button>
             {isLast ? (
               <button
-                disabled={!chosen || finishMutation.isPending}
+                disabled={!chosen || !attemptId || saveMutation.isPending || saveMutation.isError || finishMutation.isPending}
                 onClick={() => finishMutation.mutate()}
                 className="rounded-md bg-accent px-5 py-2 font-mono text-xs font-medium text-accent-foreground disabled:opacity-50"
               >
-                Завершити
+                {saveMutation.isPending ? "Збереження відповіді…" : "Завершити"}
               </button>
             ) : (
               <button
-                disabled={!chosen}
+                disabled={!chosen || !attemptId || saveMutation.isPending || saveMutation.isError}
                 onClick={() => setIndex((i) => i + 1)}
                 className="rounded-md bg-accent px-5 py-2 font-mono text-xs font-medium text-accent-foreground disabled:opacity-50"
               >
@@ -379,6 +418,15 @@ function QuizPage() {
               </button>
             )}
           </div>
+          {saveMutation.isError ? (
+            <p className="mt-3 text-right font-mono text-[10px] text-destructive">
+              Відповідь не збережено. Оберіть відповідь ще раз, щоб повторити збереження.
+            </p>
+          ) : !attemptId ? (
+            <p className="mt-3 text-right font-mono text-[10px] text-muted-foreground">
+              Підготовка спроби…
+            </p>
+          ) : null}
         </div>
       </main>
     </div>

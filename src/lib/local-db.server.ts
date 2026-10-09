@@ -21,7 +21,7 @@ function seed(): LocalDb {
   return {
     units: [{ id: unit1, name: "1-й батальйон", description: "Перший окремий батальйон", created_at: now() }, { id: unit2, name: "2-й батальйон", description: "Другий окремий батальйон", created_at: now() }],
     participants: [{ id: "aaaaaaaa-0000-0000-0000-000000000010", unit_id: unit1, callsign: "ALPHA", device_token: null }, { id: "aaaaaaaa-0000-0000-0000-000000000011", unit_id: unit2, callsign: "ALPHA", device_token: null }],
-    quizzes: [{ id: quiz1, title: "Історичні події", description: "Базовий квіз з історії", is_published: true, created_at: now(), draw_date: null, prize: null, rules: null }, { id: quiz2, title: "Технічні навички", description: "Перевірка технічних знань", is_published: true, created_at: now(), draw_date: null, prize: null, rules: null }],
+    quizzes: [{ id: quiz1, title: "Історичні події", description: "Базовий квіз з історії", is_published: true, is_current: false, created_at: now(), draw_date: null, prize: null, rules: null }, { id: quiz2, title: "Технічні навички", description: "Перевірка технічних знань", is_published: true, is_current: true, created_at: now(), draw_date: null, prize: null, rules: null }],
     questions: [{ id: q1, quiz_id: quiz1, text: "У якому році проголошено Незалежність України?", position: 1, media_url: null, media_type: null }, { id: q2, quiz_id: quiz1, text: "Хто був першим Президентом України?", position: 2, media_url: null, media_type: null }, { id: q3, quiz_id: quiz2, text: "Що означає абревіатура РЕБ?", position: 1, media_url: null, media_type: null }],
     answers: [
       { id: "77777777-0000-0000-0000-000000000001", question_id: q1, text: "1991", is_correct: true, position: 1 }, { id: "77777777-0000-0000-0000-000000000002", question_id: q1, text: "1996", is_correct: false, position: 2 }, { id: "77777777-0000-0000-0000-000000000003", question_id: q1, text: "1918", is_correct: false, position: 3 },
@@ -43,8 +43,22 @@ async function persist(db: LocalDb) {
 
 export async function getDb(): Promise<LocalDb> {
   if (cache) return cache;
+  let shouldPersist = false;
   try { cache = JSON.parse(await readFile(dbPath(), "utf8")); }
-  catch { cache = seed(); await persist(cache); }
+  catch { cache = seed(); shouldPersist = true; }
+  const quizzes = cache!.quizzes ?? [];
+  const currentQuizzes = quizzes.filter((quiz) => quiz.is_current && quiz.is_published);
+  if (quizzes.length && currentQuizzes.length !== 1) {
+    const selected = currentQuizzes[0] ?? [...quizzes]
+      .filter((quiz) => quiz.is_published)
+      .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")) || String(b.id).localeCompare(String(a.id)))[0];
+    for (const quiz of quizzes) {
+      const isCurrent = quiz === selected;
+      if (quiz.is_current !== isCurrent) shouldPersist = true;
+      quiz.is_current = isCurrent;
+    }
+  }
+  if (shouldPersist) await persist(cache!);
   return cache!;
 }
 
@@ -152,11 +166,18 @@ export async function dbQuery(input: { table: string; action: string; values?: a
         if (input.table === "participants" && rows.some((r) => r.unit_id === value.unit_id && r.callsign.toLowerCase() === String(value.callsign).toLowerCase())) throw new Error("Цей позивний уже додано до підрозділу");
         if (input.table === "attempts" && rows.some((r) => r.participant_id === value.participant_id && r.quiz_id === value.quiz_id)) throw new Error("Спробу для цього квізу вже створено");
         if (input.table === "responses" && rows.some((r) => r.attempt_id === value.attempt_id && r.question_id === value.question_id)) throw new Error("Відповідь на це запитання вже збережено");
-        const row = { id: id(), created_at: now(), ...value };
+        const row = { id: id(), created_at: now(), ...(input.table === "quizzes" ? { is_current: false } : {}), ...value };
         rows.push(row); return row;
       });
     } else if (input.action === "update") {
-      result = rows.filter(matches); result.forEach((r) => Object.assign(r, input.values));
+      if (input.table === "quizzes" && input.values?.is_current === true) {
+        rows.forEach((row) => { row.is_current = false; });
+      }
+      result = rows.filter(matches);
+      result.forEach((r) => {
+        Object.assign(r, input.values);
+        if (input.table === "quizzes" && input.values?.is_published === false) r.is_current = false;
+      });
     } else if (input.action === "delete") {
       result = rows.filter(matches);
       db[input.table] = rows.filter((r) => !matches(r));

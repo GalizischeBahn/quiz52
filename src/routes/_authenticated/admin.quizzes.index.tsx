@@ -27,7 +27,7 @@ function QuizList() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("quizzes")
-        .select("id, title, description, is_published, created_at")
+        .select("id, title, description, is_published, is_current, created_at")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -64,6 +64,22 @@ function QuizList() {
       if (error) throw error;
     },
     onSuccess: invalidate,
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const setCurrentMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("quizzes")
+        .update({ is_current: true })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Поточний квіз змінено");
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+    },
     onError: (error: Error) => toast.error(error.message),
   });
 
@@ -107,14 +123,27 @@ function QuizList() {
                     </p>
                   </td>
                   <td className="px-4 py-3 font-mono text-[11px]">
-                    {quiz.is_published ? (
-                      <span className="text-success">Опубліковано</span>
-                    ) : (
-                      <span className="text-muted-foreground">Чернетка</span>
-                    )}
+                    <div className="flex flex-col items-start gap-1">
+                      {quiz.is_published ? (
+                        <span className="text-success">Опубліковано</span>
+                      ) : (
+                        <span className="text-muted-foreground">Чернетка</span>
+                      )}
+                      {quiz.is_current ? (
+                        <span className="rounded bg-accent-soft px-2 py-0.5 text-accent">Поточний квіз</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-2">
+                      <button
+                        onClick={() => setCurrentMutation.mutate(quiz.id)}
+                        disabled={quiz.is_current || !quiz.is_published || setCurrentMutation.isPending}
+                        title={quiz.is_current ? "Цей квіз уже поточний" : quiz.is_published ? "Показувати цей квіз усім учасникам" : "Спочатку опублікуйте квіз"}
+                        className="rounded-md border border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Зробити поточним
+                      </button>
                       <button
                         onClick={() =>
                           toggleMutation.mutate({ id: quiz.id, is_published: !quiz.is_published })

@@ -37,6 +37,7 @@ function ParticipantHome() {
   const [token, setToken] = useState<string | null>(null);
   const [unitName, setUnitName] = useState("");
   const [callsign, setCallsign] = useState("");
+  const [showLoginForm, setShowLoginForm] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -50,9 +51,17 @@ function ParticipantHome() {
 
   const quizzesQuery = useQuery({
     queryKey: ["my-quizzes", token],
-    enabled: Boolean(token && participant),
+    enabled: Boolean(token && participant && showLoginForm),
     queryFn: () => myQuizzes({ data: { deviceToken: token! } }),
   });
+
+  useEffect(() => {
+    if (!showLoginForm || !participant || !token || quizzesQuery.isLoading || quizzesQuery.isError) return;
+    const quiz = quizzesQuery.data?.quizzes[0];
+    if (quiz) {
+      navigate({ to: "/quiz/$quizId", params: { quizId: quiz.id }, replace: true });
+    }
+  }, [showLoginForm, participant, token, quizzesQuery.data, quizzesQuery.isError, quizzesQuery.isLoading, navigate]);
 
   const loginMutation = useMutation({
     mutationFn: () =>
@@ -67,7 +76,7 @@ function ParticipantHome() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  if (participant && token) {
+  if (participant && token && showLoginForm) {
     const quizzes = quizzesQuery.data?.quizzes ?? [];
     return (
       <div className="min-h-screen bg-background text-foreground">
@@ -92,46 +101,13 @@ function ParticipantHome() {
         </div>
 
         <main className="mx-auto max-w-[1000px] px-6 py-8">
-          <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.25em] text-accent">
-            Доступні квізи
+          <p className="font-mono text-xs text-muted-foreground">
+            {quizzesQuery.isLoading
+              ? "Завантаження поточного квізу…"
+              : quizzes.length
+                ? "Відкриваємо поточний квіз…"
+                : "Наразі немає активних квізів. Спробуйте пізніше."}
           </p>
-          <h1 className="mb-8 font-display text-3xl font-bold tracking-tight">Оберіть квіз</h1>
-
-          <div className="divide-y divide-border/60 rounded-lg border border-border bg-surface">
-            {quizzesQuery.isLoading ? (
-              <p className="px-4 py-6 font-mono text-xs text-muted-foreground">Завантаження…</p>
-            ) : quizzes.length === 0 ? (
-              <p className="px-4 py-6 font-mono text-xs text-muted-foreground">
-                Наразі немає активних квізів.
-              </p>
-            ) : (
-              quizzes.map((quiz) => {
-                const done = Boolean(quiz.attempt?.end_time);
-                return (
-                  <div key={quiz.id} className="flex items-center justify-between gap-3 px-4 py-4">
-                    <div>
-                      <p className="font-display font-semibold leading-tight">{quiz.title}</p>
-                      <p className="font-mono text-[11px] text-muted-foreground">
-                        {quiz.description ?? "—"}
-                      </p>
-                    </div>
-                    {done ? (
-                      <span className="whitespace-nowrap rounded bg-surface-2 px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                        Завершено · {quiz.attempt?.score} балів
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => navigate({ to: "/quiz/$quizId", params: { quizId: quiz.id } })}
-                        className="whitespace-nowrap rounded-md bg-accent px-3 py-1.5 font-mono text-xs font-medium text-accent-foreground transition-opacity hover:opacity-90"
-                      >
-                        Почати
-                      </button>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
         </main>
       </div>
     );
@@ -147,16 +123,37 @@ function ParticipantHome() {
           </span>
         </div>
 
-        <div className="rounded-lg border border-border bg-surface p-6">
+        {!showLoginForm ? (
+          <div className="rounded-lg border border-border bg-surface p-6">
+            <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.25em] text-accent">
+              Перед початком
+            </p>
+            <h1 className="font-display text-2xl font-bold tracking-tight">
+              Правила проходження квізу
+            </h1>
+            <ParticipantRules />
+            <button
+              onClick={() => setShowLoginForm(true)}
+              className="mt-6 w-full rounded-md bg-accent py-2.5 font-mono text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90"
+            >
+              {participant && token ? "Перейти до поточного квізу" : "Продовжити до авторизації"}
+            </button>
+          </div>
+        ) : <>
+          <div className="mb-4 rounded-lg border border-border bg-surface p-6">
+            <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.25em] text-accent">
+              Правила проходження квізу
+            </p>
+            <ParticipantRules />
+          </div>
+          <div className="rounded-lg border border-border bg-surface p-6">
           <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.25em] text-accent">
             Крок 01
           </p>
           <h1 className="font-display text-2xl font-bold tracking-tight">
             Вхід: підрозділ і позивний
           </h1>
-          <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-            Сесія прив'язується до цього пристрою.
-          </p>
+          <p className="mt-2 font-mono text-[11px] text-muted-foreground">Сесія прив'язується до цього пристрою.</p>
 
           <form
             className="mt-6 space-y-4"
@@ -201,7 +198,8 @@ function ParticipantHome() {
               {loginMutation.isPending ? "Вхід…" : "Увійти"}
             </button>
           </form>
-        </div>
+          </div>
+        </>}
 
         <div className="mt-4 text-center">
           <Link
@@ -212,6 +210,32 @@ function ParticipantHome() {
           </Link>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ParticipantRules() {
+  return (
+    <div className="mt-5 max-h-[55vh] space-y-5 overflow-y-auto pr-2 text-sm leading-relaxed text-muted-foreground">
+      <section>
+        <h2 className="font-display font-semibold text-foreground">1. Вкажи свій підрозділ</h2>
+        <p className="mt-1">У полі «Підрозділ» зазнач свою реальну назву підрозділу, щоб організатори могли ідентифікувати тебе та знайти переможця після завершення квізу.</p>
+        <p className="mt-2">Приклади: 1-ша батарея, 2-га батарея, Рота РЕБ, Розвідувальна рота, Взвод управління.</p>
+        <p className="mt-2">Не вказуй лише назву бригади чи корпусу, якщо форма передбачає конкретний підрозділ. Це потрібно, щоб у разі перемоги організатори могли знайти тебе, перевірити результат і передати приз.</p>
+      </section>
+      <section>
+        <h2 className="font-display font-semibold text-foreground">2. Вкажи свій позивний</h2>
+        <p className="mt-1">У полі «Позивний» вкажи саме свій військовий позивний, за яким тебе знають побратими. Позивний — це не ім’я, не прізвище і не номер.</p>
+        <p className="mt-2">Правильно: «Сокіл», «Мольфар», «Тур». Неправильно: «Олександр», «Коваленко», «12345».</p>
+        <p className="mt-2">Якщо маєш позивний, використовуй саме його. Не вигадуй нового та не замінюй його своїм ім’ям. Позивний допоможе організаторам ідентифікувати переможця та зв’язатися з ним через відповідний підрозділ.</p>
+      </section>
+      <section>
+        <h2 className="font-display font-semibold text-foreground">3. Пройди квіз і отримай шанс на приз</h2>
+        <p className="mt-1">Відповідай на запитання квізу, перевіряй свої знання та змагайся за перемогу. Найкращі учасники отримають призи!</p>
+        <p className="mt-2">Щоб отримати свій приз у разі перемоги, уважно заповнюй форму авторизації: правильно вкажи підрозділ і позивний.</p>
+        <p className="mt-2">Увага! Якщо дані вказані неправильно або за ними неможливо знайти переможця, організаторам буде складніше передати приз.</p>
+        <p className="mt-2 font-semibold text-foreground">Успіхів у квізі!</p>
+      </section>
     </div>
   );
 }

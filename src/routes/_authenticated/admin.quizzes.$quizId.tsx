@@ -29,14 +29,26 @@ function QuestionEditor() {
     { text: "", is_correct: false },
   ]);
 
-  const [brief, setBrief] = useState({ draw_date: "", prize: "", rules: "" });
+  const [brief, setBrief] = useState({ draw_date: "", prize: "", rules: "", prize_image_url: "" });
+  const [prizeImageFile, setPrizeImageFile] = useState<File | null>(null);
+  const [prizeImagePreview, setPrizeImagePreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!prizeImageFile) {
+      setPrizeImagePreview(null);
+      return;
+    }
+    const preview = URL.createObjectURL(prizeImageFile);
+    setPrizeImagePreview(preview);
+    return () => URL.revokeObjectURL(preview);
+  }, [prizeImageFile]);
 
   const quizQuery = useQuery({
     queryKey: ["admin-quiz", quizId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("quizzes")
-        .select("id, title, description, draw_date, prize, rules")
+        .select("id, title, description, draw_date, prize, rules, prize_image_url")
         .eq("id", quizId)
         .single();
       if (error) throw error;
@@ -64,23 +76,33 @@ function QuestionEditor() {
         draw_date: data.draw_date ? new Date(data.draw_date).toISOString().slice(0, 16) : "",
         prize: data.prize ?? "",
         rules: data.rules ?? "",
+        prize_image_url: data.prize_image_url ?? "",
       });
     }
   }, [quizQuery.data]);
 
   const briefMutation = useMutation({
     mutationFn: async () => {
+      let prizeImageUrl = brief.prize_image_url || null;
+      if (prizeImageFile) {
+        const path = `${quizId}/prize-${crypto.randomUUID()}-${prizeImageFile.name}`;
+        const { data, error: uploadError } = await supabase.storage.from("quiz-media").upload(path, prizeImageFile);
+        if (uploadError) throw uploadError;
+        prizeImageUrl = data.path;
+      }
       const { error } = await supabase
         .from("quizzes")
         .update({
           draw_date: brief.draw_date ? new Date(brief.draw_date).toISOString() : null,
           prize: brief.prize.trim() || null,
           rules: brief.rules.trim() || null,
+          prize_image_url: prizeImageUrl,
         })
         .eq("id", quizId);
       if (error) throw error;
     },
     onSuccess: () => {
+      setPrizeImageFile(null);
       toast.success("Брифінг збережено");
       queryClient.invalidateQueries({ queryKey: ["admin-quiz", quizId] });
     },
@@ -182,6 +204,49 @@ function QuestionEditor() {
                 />
               </div>
             </div>
+            <div className="mt-3">
+              <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                Зображення призу
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const selected = event.target.files?.[0] ?? null;
+                  if (selected && !selected.type.startsWith("image/")) {
+                    toast.error("Оберіть файл зображення");
+                    event.target.value = "";
+                    return;
+                  }
+                  if (selected && selected.size > 8 * 1024 * 1024) {
+                    toast.error("Розмір зображення не має перевищувати 8 МБ");
+                    event.target.value = "";
+                    return;
+                  }
+                  setPrizeImageFile(selected);
+                }}
+                className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-xs"
+              />
+              {prizeImageFile || brief.prize_image_url ? (
+                <div className="mt-3">
+                  <img
+                    src={prizeImagePreview ?? brief.prize_image_url}
+                    alt="Попередній перегляд призу"
+                    className="max-h-48 rounded-md border border-border object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrizeImageFile(null);
+                      setBrief((current) => ({ ...current, prize_image_url: "" }));
+                    }}
+                    className="mt-2 font-mono text-[10px] text-destructive"
+                  >
+                    Видалити зображення
+                  </button>
+                </div>
+              ) : null}
+            </div>
             <label className="mb-1.5 mt-3 block font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
               Правила перемоги
             </label>
@@ -245,9 +310,23 @@ function QuestionEditor() {
           className="h-fit rounded-lg border border-border bg-surface p-4"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!text.trim()) { toast.error("Введіть текст запитання"); return; }
-            if (!answers.some((a) => a.is_correct && a.text.trim()))
-              { toast.error("Позначте правильну відповідь"); return; }
+            if (!text.trim()) {
+              toast.error("Введіть текст запитання");
+              return;
+            }
+            const correctAnswer = answers.find((answer) => answer.is_correct);
+            if (!correctAnswer?.text.trim()) {
+              toast.error(
+                correctAnswer
+                  ? "Введіть текст у варіант, позначений правильною відповіддю"
+                  : "Позначте правильну відповідь",
+              );
+              return;
+            }
+            if (answers.filter((answer) => answer.text.trim()).length < 2) {
+              toast.error("Заповніть щонайменше два варіанти відповіді");
+              return;
+            }
             addMutation.mutate();
           }}
         >
@@ -280,10 +359,16 @@ function QuestionEditor() {
           </p>
           <div className="space-y-2">
             {answers.map((answer, index) => (
-              <div key={index} className="flex items-center gap-2">
+              <div
+                key={index}
+                className={`flex items-center gap-2 rounded-md border p-1.5 ${
+                  answer.is_correct ? "border-accent bg-accent-soft" : "border-transparent"
+                }`}
+              >
                 <input
                   type="radio"
                   name="correct"
+                  aria-label={`Позначити варіант ${index + 1} правильною відповіддю`}
                   checked={answer.is_correct}
                   onChange={() =>
                     setAnswers((prev) => prev.map((a, i) => ({ ...a, is_correct: i === index })))
