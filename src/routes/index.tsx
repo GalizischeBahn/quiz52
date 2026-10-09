@@ -224,8 +224,6 @@ function ParticipantRules() {
         <ul className="mt-1 list-disc space-y-1 pl-5">
           <li>1 абатр</li>
           <li>2 сабатр</li>
-          <li>2 САДн</li>
-          <li>ДАР</li>
           <li>рота реб</li>
         </ul>
         <p className="mt-2">Не вказуй лише назву бригади, якщо форма передбачає конкретний підрозділ.</p>
