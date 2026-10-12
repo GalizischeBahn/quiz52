@@ -67,7 +67,7 @@ function AuthPage() {
           <div className="grid size-7 place-items-center bg-accent font-display text-sm font-bold text-accent-foreground">
             К
           </div>
-          <span className="font-display font-semibold tracking-tight">КВІЗ-СИСТЕМА</span>
+          <span className="font-display font-semibold tracking-tight">КВІЗ 52</span>
           <span className="border-l border-border pl-3 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             Адміністратор
           </span>

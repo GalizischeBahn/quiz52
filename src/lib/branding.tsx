@@ -12,7 +12,7 @@ export type Branding = {
 };
 
 export const DEFAULT_BRANDING: Branding = {
-  system_name: "КВІЗ-СИСТЕМА",
+  system_name: "КВІЗ 52",
   logo_url: null,
   color_background: "220 12% 5%",
   color_surface: "220 10% 9%",

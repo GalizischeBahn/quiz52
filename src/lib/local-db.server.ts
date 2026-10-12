@@ -29,7 +29,7 @@ function seed(): LocalDb {
       { id: "77777777-0000-0000-0000-000000000006", question_id: q3, text: "Радіоелектронна боротьба", is_correct: true, position: 1 }, { id: "77777777-0000-0000-0000-000000000007", question_id: q3, text: "Резервний енергоблок", is_correct: false, position: 2 },
     ],
     attempts: [], responses: [], users: [], sessions: [],
-    app_settings: [{ id: true, system_name: "КВІЗ-СИСТЕМА", logo_url: null, color_background: "220 12% 5%", color_surface: "220 10% 9%", color_surface_2: "220 8% 13%", color_foreground: "40 20% 92%", color_accent: "38 78% 55%" }],
+    app_settings: [{ id: true, system_name: "КВІЗ 52", logo_url: null, color_background: "220 12% 5%", color_surface: "220 10% 9%", color_surface_2: "220 8% 13%", color_foreground: "40 20% 92%", color_accent: "38 78% 55%" }],
   };
 }
 
@@ -46,6 +46,12 @@ export async function getDb(): Promise<LocalDb> {
   let shouldPersist = false;
   try { cache = JSON.parse(await readFile(dbPath(), "utf8")); }
   catch { cache = seed(); shouldPersist = true; }
+  for (const settings of cache!.app_settings ?? []) {
+    if (settings.system_name === "КВІЗ-СИСТЕМА") {
+      settings.system_name = "КВІЗ 52";
+      shouldPersist = true;
+    }
+  }
   const quizzes = cache!.quizzes ?? [];
   const currentQuizzes = quizzes.filter((quiz) => quiz.is_current && quiz.is_published);
   if (quizzes.length && currentQuizzes.length !== 1) {

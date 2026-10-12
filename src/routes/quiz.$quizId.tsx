@@ -249,7 +249,7 @@ function QuizPage() {
             <dl className="mt-6 grid gap-4 sm:grid-cols-2">
               <div className="rounded-md border border-border bg-surface-2 p-4">
                 <dt className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-                  Дата розіграшу
+                  Термін закінчення
                 </dt>
                 <dd className="mt-1 font-display text-lg font-semibold">
                   {info?.draw_date
