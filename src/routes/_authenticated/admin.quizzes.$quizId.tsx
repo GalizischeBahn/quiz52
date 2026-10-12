@@ -17,13 +17,15 @@ export const Route = createFileRoute("/_authenticated/admin/quizzes/$quizId")({
   component: QuestionEditor,
 });
 
-type AnswerDraft = { text: string; is_correct: boolean };
+type AnswerDraft = { id?: string; text: string; is_correct: boolean };
 
 function QuestionEditor() {
   const { quizId } = Route.useParams();
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const [existingMedia, setExistingMedia] = useState<{ url: string | null; type: string | null }>({ url: null, type: null });
   const [answers, setAnswers] = useState<AnswerDraft[]>([
     { text: "", is_correct: true },
     { text: "", is_correct: false },
@@ -118,11 +120,11 @@ function QuestionEditor() {
       let mediaType: string | null = null;
       if (file) {
         const path = `${quizId}/${crypto.randomUUID()}-${file.name}`;
-        const { error: uploadError } = await supabase.storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
           .from("quiz-media")
           .upload(path, file);
         if (uploadError) throw uploadError;
-        mediaUrl = path;
+        mediaUrl = uploadData.path;
         mediaType = file.type.startsWith("video") ? "video" : "image";
       }
 
@@ -159,6 +161,81 @@ function QuestionEditor() {
     },
     onError: (error: Error) => toast.error(error.message),
   });
+
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingQuestionId) throw new Error("Оберіть запитання для редагування");
+
+      let mediaUrl = existingMedia.url;
+      let mediaType = existingMedia.type;
+      if (file) {
+        const path = `${quizId}/${crypto.randomUUID()}-${file.name}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("quiz-media")
+          .upload(path, file);
+        if (uploadError) throw uploadError;
+        mediaUrl = uploadData.path;
+        mediaType = file.type.startsWith("video") ? "video" : "image";
+      }
+
+      const { error } = await supabase
+        .from("questions")
+        .update({ text: text.trim(), media_url: mediaUrl, media_type: mediaType })
+        .eq("id", editingQuestionId);
+      if (error) throw error;
+
+      const currentAnswers = questionsQuery.data?.find((question) => question.id === editingQuestionId)?.answers ?? [];
+      const keptAnswerIds = new Set(answers.filter((answer) => answer.text.trim()).flatMap((answer) => answer.id ? [answer.id] : []));
+
+      for (const [index, answer] of answers.filter((item) => item.text.trim()).entries()) {
+        const values = { text: answer.text.trim(), is_correct: answer.is_correct, position: index + 1 };
+        if (answer.id) {
+          const { error: answerError } = await supabase.from("answers").update(values).eq("id", answer.id);
+          if (answerError) throw answerError;
+        } else {
+          const { error: answerError } = await supabase.from("answers").insert({ question_id: editingQuestionId, ...values });
+          if (answerError) throw answerError;
+        }
+      }
+
+      for (const answer of currentAnswers) {
+        if (!keptAnswerIds.has(answer.id)) {
+          const { error: answerError } = await supabase.from("answers").delete().eq("id", answer.id);
+          if (answerError) throw answerError;
+        }
+      }
+    },
+    onSuccess: () => {
+      setEditingQuestionId(null);
+      setText("");
+      setFile(null);
+      setExistingMedia({ url: null, type: null });
+      setAnswers([{ text: "", is_correct: true }, { text: "", is_correct: false }]);
+      toast.success("Запитання оновлено");
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const startEditing = (question: NonNullable<typeof questionsQuery.data>[number]) => {
+    setEditingQuestionId(question.id);
+    setText(question.text);
+    setFile(null);
+    setExistingMedia({ url: question.media_url ?? null, type: question.media_type ?? null });
+    setAnswers(
+      [...(question.answers ?? [])]
+        .sort((a, b) => a.position - b.position)
+        .map((answer) => ({ id: answer.id, text: answer.text, is_correct: answer.is_correct })),
+    );
+  };
+
+  const cancelEditing = () => {
+    setEditingQuestionId(null);
+    setText("");
+    setFile(null);
+    setExistingMedia({ url: null, type: null });
+    setAnswers([{ text: "", is_correct: true }, { text: "", is_correct: false }]);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -274,13 +351,37 @@ function QuestionEditor() {
                   </p>
                   <p className="mt-1 font-display font-semibold">{question.text}</p>
                 </div>
-                <button
-                  onClick={() => deleteMutation.mutate(question.id)}
-                  className="rounded-md border border-border px-3 py-1.5 font-mono text-[11px] text-destructive"
-                >
-                  Видалити
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => startEditing(question)}
+                    className="rounded-md border border-border px-3 py-1.5 font-mono text-[11px] text-foreground hover:border-accent"
+                  >
+                    Редагувати
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteMutation.mutate(question.id)}
+                    className="rounded-md border border-border px-3 py-1.5 font-mono text-[11px] text-destructive"
+                  >
+                    Видалити
+                  </button>
+                </div>
               </div>
+              {question.media_url && question.media_type === "image" ? (
+                <img
+                  src={question.media_url}
+                  alt={question.text}
+                  className="mt-3 max-h-72 w-full rounded-md border border-border object-contain"
+                />
+              ) : null}
+              {question.media_url && question.media_type === "video" ? (
+                <video
+                  src={question.media_url}
+                  controls
+                  className="mt-3 max-h-72 w-full rounded-md border border-border"
+                />
+              ) : null}
               <ul className="mt-3 space-y-1.5">
                 {[...(question.answers ?? [])]
                   .sort((a, b) => a.position - b.position)
@@ -327,11 +428,12 @@ function QuestionEditor() {
               toast.error("Заповніть щонайменше два варіанти відповіді");
               return;
             }
-            addMutation.mutate();
+            if (editingQuestionId) editMutation.mutate();
+            else addMutation.mutate();
           }}
         >
           <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.15em] text-accent">
-            Додати запитання
+            {editingQuestionId ? "Редагувати запитання" : "Додати запитання"}
           </p>
           <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
             Текст запитання
@@ -348,11 +450,29 @@ function QuestionEditor() {
             Зображення або відео
           </label>
           <input
+            key={editingQuestionId ?? "new-question"}
             type="file"
             accept="image/*,video/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="mb-4 w-full font-mono text-[11px] text-muted-foreground"
           />
+          {editingQuestionId && existingMedia.url ? (
+            <div className="mb-4">
+              {existingMedia.type === "video" ? (
+                <video src={existingMedia.url} controls className="mb-2 max-h-56 w-full rounded-md border border-border" />
+              ) : (
+                <img src={existingMedia.url} alt="Медіа поточного запитання" className="mb-2 max-h-56 w-full rounded-md border border-border object-contain" />
+              )}
+              <button
+                type="button"
+                onClick={() => setExistingMedia({ url: null, type: null })}
+                className="font-mono text-[10px] text-destructive"
+              >
+                Видалити медіа
+              </button>
+            </div>
+          ) : null}
+          {file ? <p className="-mt-2 mb-4 font-mono text-[10px] text-muted-foreground">Нове медіа: {file.name}</p> : null}
 
           <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
             Варіанти відповідей
@@ -399,11 +519,24 @@ function QuestionEditor() {
 
           <button
             type="submit"
-            disabled={addMutation.isPending}
+            disabled={addMutation.isPending || editMutation.isPending}
             className="mt-4 w-full rounded-md bg-accent py-2 font-mono text-xs font-medium text-accent-foreground disabled:opacity-60"
           >
-            {addMutation.isPending ? "Збереження…" : "Додати запитання"}
+            {addMutation.isPending || editMutation.isPending
+              ? "Збереження…"
+              : editingQuestionId
+                ? "Зберегти зміни"
+                : "Додати запитання"}
           </button>
+          {editingQuestionId ? (
+            <button
+              type="button"
+              onClick={cancelEditing}
+              className="mt-2 w-full rounded-md border border-border py-2 font-mono text-xs text-muted-foreground hover:text-foreground"
+            >
+              Скасувати редагування
+            </button>
+          ) : null}
         </form>
       </div>
     </AdminShell>
